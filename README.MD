@@ -5,8 +5,8 @@ Playbooks:
 - [Ubuntu Server Set-Up](server-setup) - Sets up Ubuntu server. Configures a new user, SSH key, fail2ban, useful utils, and more
 - [rTorrent](rtorrent) - installs rTorrent
 - [qBittorrent](qbittorrent) - installs qBittorrent
-- [WireGuard VPN](vpn) - installs WireGuard
-- [wg-easy](wg-easy) - installs WireGuard using [wg-easy](https://github.com/wg-easy/wg-easy). More user-friendly variant, includes WebUI
+- [WireGuard VPN](vpn) - installs WireGuard VPN
+- [wg-easy](wg-easy) - installs WireGuard VPN using [wg-easy](https://github.com/wg-easy/wg-easy). More user-friendly variant, includes WebUI
 
 ## Necessary dependencies
 
