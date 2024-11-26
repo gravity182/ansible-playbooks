@@ -8,7 +8,7 @@ Playbooks:
 - [WireGuard VPN](vpn) - Installs WireGuard VPN
 - [wg-easy](wg-easy) - Installs WireGuard VPN using [wg-easy](https://github.com/wg-easy/wg-easy). More user-friendly variant, includes WebUI
 
-## Necessary dependencies
+## Required dependencies
 
 Please make sure to install the Python [passlib](https://pypi.org/project/passlib/) library locally.
 This library is required for those playbooks that accept passwords.
