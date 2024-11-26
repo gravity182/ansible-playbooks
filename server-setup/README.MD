@@ -42,8 +42,8 @@ ansible-playbook -i inventory.yml --ask-pass --ask-become-pass postinstall.yml
 
 On the run you'll be asked for the SSH password and the user password. The latter may be skipped, in which case it will be defaulted to the SSH password.
 
-This playbook is highly customizable and you'll be asked for the following params:
+This playbook is highly customizable - the platbook will ask you for the following params:
 
 - Username and password of a new user to create
-- Server's alias. It will allow fast and handy connecting via `ssh`. For example, you can type `ssh <alias>` instead of `ssh <user>@<host>`.
+- Server's alias. It will allow handy connection via `ssh`. For example, you can type `ssh <alias>` instead of `ssh <user>@<host>`.
     This alias will also be used for the generation of a ssh key, using this pattern: `id_rsa_{{ server_alias }}@{{ username }}`
