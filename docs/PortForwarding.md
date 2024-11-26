@@ -9,11 +9,11 @@ autossh -M 0 -f -T -N -o "ServerAliveInterval 120" -o "ServerAliveCountMax 3" -L
 ```
 
 Let's clarify what's happening here:
-- `-M 0` - disables the monitoring function off. Instead we'll use `ServerAliveInterval` and `ServerAliveCountMax`
+- `-M 0` - disables the monitoring function. Instead we'll use `ServerAliveInterval` and `ServerAliveCountMax`
 - `-f` - causes autossh to drop to the background before running ssh. This will allow us to continue working in a terminal without breaking the tunnel
-- `-T` - disables pseudo-terminal allocation. We don't need PTY since we use SSH only for port forwarding
+- `-T` - disables pseudo-terminal allocation. We don't need PTY since we only use SSH for port forwarding
 - `-N` - do not execute a remote command. This is useful for just forwarding ports
-- `-o "ServerAliveInterval 120"` - keeps the SSH tunnel alive by sending a message every 120 seconds
+- `-o "ServerAliveInterval 120"` - keeps the SSH tunnel alive by sending a message every N seconds
 - `-o "ServerAliveCountMax 3"` - the number of server alive messages which may be sent without ssh receiving any messages back from the server. If this threshold is reached, the SSH tunnel will be terminated
 - `-L 5000:localhost:5000` - bind address. Follows the following scheme: `localport:host:hostport`
 
