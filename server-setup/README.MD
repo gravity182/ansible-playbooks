@@ -47,3 +47,4 @@ This playbook is highly customizable - the playbook will ask you for the followi
 - Username and password of a new user to create
 - Server's alias. It will allow handy connection via `ssh`. For example, you can type `ssh <alias>` instead of `ssh <user>@<host>`.
     This alias will also be used for the generation of a ssh key, using this pattern: `id_rsa_{{ server_alias }}@{{ username }}`
+- Server's timezone
