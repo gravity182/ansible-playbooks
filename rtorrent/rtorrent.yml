@@ -1,0 +1,59 @@
+- name: Install rTorrent
+  hosts: remotehost
+  gather_facts: false
+  vars:
+    user: "{{ ansible_user }}"
+    home: "/home/{{ ansible_user }}"
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 86400
+      become: true
+    - name: Add rTorrent apt repository
+      ansible.builtin.apt_repository:
+        repo: deb [trusted=yes] https://deb.jesec.io/ devel main
+        state: present
+      become: true
+    - name: Install rTorrent
+      ansible.builtin.apt:
+        package: rtorrent
+        default_release: devel
+        state: present
+      become: true
+    - name: Write the rTorrent config file
+      ansible.builtin.copy:
+        src: copy/.rtorrent.rc
+        dest: "{{ home }}/.rtorrent.rc"
+        mode: "0755"
+        owner: "{{ user }}"
+        group: "{{ user }}"
+      become: true
+    - name: Install tmux
+      ansible.builtin.apt:
+        package: tmux
+        state: present
+      become: true
+    - name: Write the tmux config file
+      ansible.builtin.copy:
+        src: copy/.tmux.conf
+        dest: "{{ home }}/.tmux.conf"
+        mode: "0755"
+        owner: "{{ user }}"
+        group: "{{ user }}"
+      become: true
+    - name: Write the rTorrent systemd service file
+      ansible.builtin.copy:
+        src: copy/rtorrent@.service
+        dest: /etc/systemd/system/rtorrent@.service
+        mode: "0755"
+        owner: root
+        group: root
+      become: true
+    - name: Enable the systemd service
+      ansible.builtin.systemd:
+        name: "rtorrent@{{ user }}.service"
+        state: started
+        enabled: true
+        daemon_reload: true
+      become: true

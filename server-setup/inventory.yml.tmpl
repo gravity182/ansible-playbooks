@@ -1,0 +1,10 @@
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_host: 127.0.0.1
+    remotehost:
+      ansible_connection: ssh
+      ansible_host: <host> # set remote host (either IP or alias)
+      ansible_user: root
+      ansible_port: 22

@@ -1,0 +1,443 @@
+- name: Ubuntu Server Set-Up
+  hosts: remotehost
+  gather_facts: true
+  vars_prompt:
+    - name: username
+      prompt: The name of a user to create
+      private: false
+    - name: password
+      prompt: The password of a user to create
+      private: true
+      encrypt: sha512_crypt
+      confirm: true
+      salt_size: 8
+    - name: ssh_config_server_alias
+      prompt: The server's alias to be used in the SSH config
+      private: false
+    - name: apt_upgrade
+      prompt: Upgrade packages (yes/no)?
+      default: "yes"
+      private: false
+    - name: docker_install
+      prompt: Install Docker (yes/no)?
+      default: "no"
+      private: false
+    - name: k3s_install
+      prompt: Install K3s (yes/no)?
+      default: "no"
+      private: false
+  vars:
+    remote_ansible_host: "{{ ansible_host }}"
+    remote_ansible_port: "{{ ansible_port }}"
+    ssh_key_filename: "id_rsa_{{ ssh_config_server_alias }}@{{ username }}"
+    ssh_port: "2000"
+  tasks:
+    - name: Register local user
+      ansible.builtin.command:
+        cmd: whoami
+      changed_when: false
+      delegate_to: localhost
+      register: local_whoami
+    - name: Register architecture
+      ansible.builtin.command:
+        cmd: dpkg --print-architecture
+      changed_when: false
+      register: arch
+      become: true
+    - name: Register distribution codename
+      ansible.builtin.shell:
+        cmd: source /etc/os-release && echo "${VERSION_CODENAME:-$UBUNTU_CODENAME}"
+        executable: /bin/bash
+      changed_when: false
+      register: distrib_codename
+      become: true
+    - name: Perform apt full-upgrade
+      ansible.builtin.apt:
+        upgrade: "full"
+        update_cache: true
+        cache_valid_time: 0
+        autoremove: true
+        dpkg_options: "force-confdef,force-confold" # see explanation https://unix.stackexchange.com/a/642541
+      become: true
+      when: apt_upgrade | bool
+      register: upgrade_result
+    - name: Reboot the machine after upgrading  # noqa: no-handler
+      ansible.builtin.reboot:
+        reboot_timeout: 120
+      when: upgrade_result.changed
+    - name: Create user with sudo privileges
+      ansible.builtin.user:
+        name: "{{ username }}"
+        groups:
+          - sudo
+        append: true
+        shell: /bin/bash
+        state: present
+        generate_ssh_key: false
+        password: "{{ password }}"
+        update_password: always
+      become: true
+    - name: User created
+      ansible.builtin.debug:
+        msg: "Created user '{{ username }}'"
+    - name: Set up firewall (ufw)
+      block:
+        - name: Ensure firewall is installed
+          ansible.builtin.apt:
+            package: ufw
+            state: present
+          become: true
+        - name: Ensure firewall service is running
+          ansible.builtin.service:
+            name: ufw
+            state: started
+            enabled: true
+          become: true
+        - name: Enable firewall
+          community.general.ufw:
+            state: enabled
+          become: true
+        - name: Deny all incoming traffic
+          community.general.ufw:
+            default: deny
+            direction: incoming
+          become: true
+        - name: Allow all outgoing traffic
+          community.general.ufw:
+            default: allow
+            direction: outgoing
+          become: true
+        - name: Allow SSH connections
+          community.general.ufw:
+            rule: allow
+            port: '{{ ssh_port }}'
+            proto: tcp
+          become: true
+        - name: Register firewall's status
+          ansible.builtin.command:
+            cmd: ufw status verbose
+          changed_when: false
+          register: firewall_status_verbose
+          become: true
+        - name: Print firewall's status
+          ansible.builtin.debug:
+            var: firewall_status_verbose.stdout_lines
+    - name: Set up fail2ban
+      block:
+        - name: Ensure fail2ban is installed
+          ansible.builtin.apt:
+            name: fail2ban
+            state: present
+          become: true
+        - name: Ensure fail2ban service is running
+          ansible.builtin.service:
+            name: fail2ban
+            state: started
+            enabled: true
+          become: true
+        - name: Configure fail2ban
+          ansible.builtin.blockinfile:
+            path: "/etc/fail2ban/jail.local"
+            block: |
+              [DEFAULT]
+              bantime = 24h
+              bantime.increment = true
+              bantime.factor = 1
+              findtime = 10m
+              maxretry = 5
+              backend = auto
+              usedns = warn
+
+              [sshd]
+              enabled = true
+              port = {{ ssh_port }}
+              backend = systemd
+            state: present
+            mode: "0644"
+            create: true
+            backup: true
+          become: true
+    - name: Set up SSH authentication
+      block:
+        - name: Generate ssh keys locally
+          ansible.builtin.user:
+            name: "{{ local_whoami.stdout }}"
+            generate_ssh_key: true
+            ssh_key_type: rsa
+            ssh_key_bits: 3072
+            ssh_key_passphrase: ""
+            ssh_key_file: "~/.ssh/{{ ssh_key_filename }}"
+          delegate_to: localhost
+          register: generated_keys
+        - name: SSH keys generated
+          ansible.builtin.debug:
+            msg: Generated SSH keys under the path '~/.ssh/{{ ssh_key_filename }}'
+        - name: Push the generated public key to the remote host
+          ansible.posix.authorized_key:
+            user: "{{ username }}"
+            state: present
+            key: "{{ generated_keys.ssh_public_key }}"
+          become: true
+        - name: Create a local SSH config
+          ansible.builtin.blockinfile:
+            dest: ~/.ssh/config
+            block: |
+              Host {{ ssh_config_server_alias }}
+                  HostName {{ remote_ansible_host }}
+                  Port {{ ssh_port }}
+                  User {{ username }}
+                  ServerAliveInterval 120
+                  ServerAliveCountMax 3
+                  IdentityFile ~/.ssh/{{ ssh_key_filename }}
+            insertafter: EOF
+            marker: "# {mark} ANSIBLE MANAGED SSH CONFIG"
+            marker_begin: "{{ ssh_config_server_alias }} BEGIN"
+            marker_end: "{{ ssh_config_server_alias }} END"
+            append_newline: true
+            create: true
+            mode: "0755"
+            state: present
+            backup: "yes"
+          delegate_to: localhost
+        - name: Configure sshd
+          ansible.builtin.blockinfile:
+            path: "/etc/ssh/sshd_config"
+            block: |
+              Port {{ ssh_port }}
+              PasswordAuthentication no
+              PermitRootLogin no
+              PubkeyAuthentication yes
+              AuthorizedKeysFile .ssh/authorized_keys
+              MaxAuthTries 5
+              MaxSessions 10
+              AllowUsers {{ username }}
+    - name: System config tweaks
+      block:
+        - name: Set timezone
+          community.general.timezone:
+            name: "Europe/Moscow"
+          become: true
+        - name: Set maximum journal size
+          ansible.builtin.lineinfile:
+            path: /etc/systemd/journald.conf
+            regex: "[#]*SystemMaxUse=.*"
+            line: "SystemMaxUse=256M"
+            state: present
+            backup: "yes"
+          become: true
+        - name: Generate locale
+          ansible.builtin.command:
+            cmd: locale-gen "en_US.UTF-8"
+          changed_when: true
+          become: true
+    - name: Add basic shell configuration
+      block:
+        - name: Set important env vars
+          ansible.builtin.lineinfile:
+            path: "/home/{{ username }}/.bashrc"
+            line: "{{ item }}"
+            state: present
+            backup: false
+          loop:
+            - export EDITOR='vim'
+            - export PAGER='less'
+            - export LESS='-igRFXM --tabs=4 --mouse'
+            - LANG=en_US.UTF-8
+            - LC_ALL=en_US.UTF-8
+            - LC_CTYPE=en_US.UTF-8
+        - name: Adjust VIM settings
+          ansible.builtin.lineinfile:
+            path: "/home/{{ username }}/.vimrc"
+            line: "{{ item }}"
+            state: present
+            mode: "0755"
+            create: true
+            backup: false
+          loop:
+            - "set number"
+            - "set ignorecase"
+            - "set smartcase"
+            - "set hlsearch"
+            - "set incsearch"
+            - "set encoding=utf8"
+            - "set timeout timeoutlen=1000 ttimeoutlen=100"
+            - 'let &t_EI = "\<Esc>[2 q"'
+            - 'let &t_SI = "\<Esc>[6 q"'
+            - 'let &t_SR = "\<Esc>[4 q"'
+            - "nmap 0 ^"
+            - "nmap Y y$"
+        - name: Enable vi mode for Bash
+          ansible.builtin.lineinfile:
+            path: "/home/{{ username }}/.bashrc"
+            line: "set -o vi"
+            state: present
+            backup: false
+        - name: Adjust cursor shape for Bash's vi mode
+          ansible.builtin.lineinfile:
+            path: "/home/{{ username }}/.inputrc"
+            line: "{{ item }}"
+            state: present
+            mode: "0644"
+            create: true
+            backup: false
+          loop:
+            - 'set show-mode-in-prompt on'
+            - 'set vi-cmd-mode-string "\1\e[2 q\2"'
+            - 'set vi-ins-mode-string "\1\e[6 q\2"'
+            - 'set keyseq-timeout 1'
+    - name: Set up k3s
+      when: k3s_install | bool
+      block:
+        - name: Install k3s
+          ansible.builtin.shell:
+            cmd: |
+              set -o pipefail
+              curl -sfL https://get.k3s.io | sh -
+            executable: /bin/bash
+            creates: "k3s"
+          become: true
+          become_user: "{{ username }}"
+        - name: Allow necessary ports for k3s API
+          community.general.ufw:
+            rule: allow
+            port: '6443'
+            proto: tcp
+          become: true
+        - name: Allow necessary ports for k3s pods & services
+          community.general.ufw:
+            rule: allow
+            from: '{{ item }}'
+            to: any
+          loop:
+            - 10.42.0.0/16
+            - 10.43.0.0/16
+          become: true
+    - name: Set up Docker
+      when: docker_install | bool
+      block:
+        - name: Remove old packages
+          ansible.builtin.apt:
+            name:
+              - docker.io
+              - docker-doc
+              - docker-compose
+              - docker-compose-v2
+              - podman-docker
+              - containerd
+              - runc
+            state: absent
+          become: true
+        - name: Install dependencies
+          ansible.builtin.apt:
+            name:
+              - ca-certificates
+              - curl
+            state: present
+          become: true
+        - name: Add GPG key
+          ansible.builtin.get_url:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            dest: /etc/apt/keyrings/docker.asc
+            mode: "0644"
+            force: true
+          become: true
+        - name: Add APT repository
+          ansible.builtin.apt_repository:
+            repo: "deb [arch={{ arch.stdout }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+              {{ distrib_codename.stdout }} stable"
+            filename: docker
+            state: present
+            update_cache: true
+          become: true
+        - name: Install Docker
+          ansible.builtin.apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+              - docker-compose-plugin
+            state: present
+          become: true
+        - name: Enable Docker service
+          ansible.builtin.service:
+            name: "{{ item }}"
+            enabled: true
+            state: started
+          loop:
+            - docker
+            - containerd
+          become: true
+        - name: Verify that docker is correctly installed
+          ansible.builtin.command:
+            cmd: docker run --rm hello-world
+          register: docker_test_cmd
+          changed_when: false
+          failed_when: docker_test_cmd.rc != 0
+          become: true
+        - name: Ensure the 'docker' group exists
+          ansible.builtin.group:
+            name: docker
+            state: present
+          become: true
+        - name: Add user to the 'docker' group
+          ansible.builtin.user:
+            name: "{{ username }}"
+            groups:
+              - docker
+            append: true
+            state: present
+          become: true
+        - name: Install lazydocker
+          ansible.builtin.shell:
+            cmd: |
+              set -o pipefail
+              curl -sSfL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | bash
+            executable: /bin/bash
+            creates: "lazydocker"
+          become: true
+          become_user: "{{ username }}"
+    - name: Set up useful utils
+      block:
+        - name: Install utils
+          ansible.builtin.apt:
+            name:
+              - git
+              - curl
+              - wget
+              - vim
+              - htop
+              - atop
+              - iftop
+              - iotop
+              - ncdu
+              - bash-completion
+              - jq
+              - zip
+              - hyperfine
+              - cockpit
+            state: present
+          become: true
+        - name: Start cockpit - a web-based on-demand GUI for servers (access on port 9090)
+          ansible.builtin.service:
+            name: cockpit
+            state: started
+            enabled: true
+          become: true
+    - name: Chown home to the user
+      ansible.builtin.file:
+        path: "/home/{{ username }}"
+        mode: "0750"
+        owner: "{{ username }}"
+        group: "{{ username }}"
+        recurse: true
+      become: true
+    - name: Set-Up finished successfully - now rebooting the machine
+      ansible.builtin.reboot:
+        reboot_timeout: 1
+      failed_when: false
+    - name: Wait for the machine reboot
+      delegate_to: localhost
+      ansible.builtin.wait_for:
+        port: "{{ ssh_port }}"
+        host: "{{ ssh_config_server_alias }}"
+        timeout: 600

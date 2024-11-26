@@ -1,0 +1,64 @@
+- name: Set up WireGuard VPN using wg-easy
+  hosts: remotehost
+  gather_facts: true
+  vars_prompt:
+    - name: webui_admin_password
+      prompt: The admin password of the web UI
+      private: true
+      confirm: true
+  vars:
+    user: "{{ ansible_user }}"
+    webui_port: "6780"
+  tasks:
+    - name: Check if Docker is installed
+      ansible.builtin.command:
+        cmd: docker --version
+      register: docker_version_cmd
+      changed_when: false
+      failed_when: docker_version_cmd.rc != 0
+    - name: Stop the old wg-easy container
+      ansible.builtin.shell:
+        cmd: |
+          docker stop wg-easy && docker rm wg-easy
+      register: docker_stop_cmd
+      changed_when: docker_stop_cmd.rc == 0
+      failed_when: false
+    - name: Pull the new wg-easy image
+      ansible.builtin.command:
+        cmd: docker pull ghcr.io/wg-easy/wg-easy:latest
+      register: pull_image_cmd
+      changed_when: '"Image is up to date" not in pull_image_cmd.stdout'
+      failed_when: pull_image_cmd.rc != 0
+    - name: Obtain bcrypted hash of the webui password
+      ansible.builtin.command:
+        cmd: docker run --rm ghcr.io/wg-easy/wg-easy wgpw "{{ webui_admin_password }}"
+      register: password_hash
+      failed_when: password_hash.rc != 0
+      changed_when: true
+    - name: Run the wg-easy container
+      # the command above outputs the hash in form of "PASSWORD_HASH='{hash}'" - extract only the hash
+      ansible.builtin.shell:
+        cmd: >
+          docker run -d \
+            --name=wg-easy \
+            -e LANG=en \
+            -e WG_HOST='{{ ansible_default_ipv4.address }}' \
+            -e PASSWORD_HASH='{{ password_hash.stdout[15:-1] }}' \
+            -e PORT=51821 \
+            -e WG_PORT=51820 \
+            -e WG_MTU="1420" \
+            -e WG_DEFAULT_DNS="1.1.1.1, 1.0.0.1" \
+            -e WG_ALLOWED_IPS="0.0.0.0/0, ::/0" \
+            -e WG_DEFAULT_ADDRESS="10.8.0.x" \
+            -v ~/.wg-easy:/etc/wireguard \
+            -p 127.0.0.1:{{ webui_port }}:51821/tcp \
+            -p 51820:51820/udp \
+            --cap-add=NET_ADMIN \
+            --cap-add=SYS_MODULE \
+            --sysctl="net.ipv4.conf.all.src_valid_mark=1" \
+            --sysctl="net.ipv4.ip_forward=1" \
+            --restart unless-stopped \
+            ghcr.io/wg-easy/wg-easy
+      register: run_cmd
+      changed_when: true
+      failed_when: run_cmd.rc != 0

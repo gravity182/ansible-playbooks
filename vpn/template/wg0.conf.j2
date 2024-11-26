@@ -1,0 +1,12 @@
+[Interface]
+PrivateKey = {{ wg_private_key.stdout }}
+Address = 10.8.0.1/24
+ListenPort = 51820
+SaveConfig = true
+
+PostUp = ufw route allow in on wg0 out on {{ ip_interface.stdout }}
+PostUp = iptables -t nat -I POSTROUTING -o {{ ip_interface.stdout }} -j MASQUERADE
+PostUp = ip6tables -t nat -I POSTROUTING -o {{ ip_interface.stdout }} -j MASQUERADE
+PreDown = ufw route delete allow in on wg0 out on {{ ip_interface.stdout }}
+PreDown = iptables -t nat -D POSTROUTING -o {{ ip_interface.stdout }} -j MASQUERADE
+PreDown = ip6tables -t nat -D POSTROUTING -o {{ ip_interface.stdout }} -j MASQUERADE

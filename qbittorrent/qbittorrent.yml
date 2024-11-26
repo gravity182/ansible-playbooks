@@ -1,0 +1,54 @@
+- name: Install qBittorrent
+  hosts: remotehost
+  gather_facts: false
+  vars:
+    user: "{{ ansible_user }}"
+    home: "/home/{{ ansible_user }}"
+    webui_port: "5000"
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 86400
+      become: true
+    - name: Install qBittorrent-nox
+      ansible.builtin.apt:
+        package: qbittorrent-nox
+        state: present
+      become: true
+    - name: Create qBittorrent directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: "{{ user }}"
+        group: "{{ user }}"
+      loop:
+        - "{{ home }}/.config/qBittorrent"
+        - "{{ home }}/qbittorrent/download"
+        - "{{ home }}/qbittorrent/completed"
+        - "{{ home }}/qbittorrent/watch/load"
+      become: true
+    - name: Write the qBittorrent config file
+      ansible.builtin.template:
+        src: template/qBittorrent.conf.j2
+        dest: "{{ home }}/.config/qBittorrent/qBittorrent.conf"
+        mode: "0755"
+        owner: "{{ user }}"
+        group: "{{ user }}"
+      become: true
+    - name: Write the qBittorrent systemd service file
+      ansible.builtin.copy:
+        src: copy/qbittorrent@.service
+        dest: /etc/systemd/system/qbittorrent@.service
+        mode: "0755"
+        owner: root
+        group: root
+      become: true
+    - name: Enable the systemd service
+      ansible.builtin.systemd:
+        name: "qbittorrent@{{ user }}.service"
+        state: started
+        enabled: true
+        daemon_reload: true
+      become: true

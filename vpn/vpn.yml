@@ -1,0 +1,103 @@
+- name: Set up WireGuard VPN
+  hosts: remotehost
+  gather_facts: false
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 86400
+      become: true
+    - name: Install WireGuard
+      ansible.builtin.apt:
+        package: wireguard
+        state: present
+      become: true
+    - name: Generate server's private key
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          wg genkey | tee /etc/wireguard/private.key
+          chmod go= /etc/wireguard/private.key
+      register: wg_private_key
+      changed_when: true
+      become: true
+    - name: Generate server's public key
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          cat /etc/wireguard/private.key | wg pubkey | tee /etc/wireguard/public.key
+      register: wg_public_key
+      changed_when: true
+      become: true
+    - name: Print server's public key
+      ansible.builtin.debug:
+        msg: "WireGuard's public key: {{ wg_public_key.stdout }}"
+    - name: Enable IPv4 forwarding
+      ansible.builtin.lineinfile:
+        path: /etc/sysctl.conf
+        line: "net.ipv4.ip_forward=1"
+        state: present
+        backup: "yes"
+      become: true
+    - name: Reload sysctl configuration
+      ansible.builtin.command:
+        cmd: sysctl -p
+      become: true
+      changed_when: true
+      register: sysctl_reload_result
+    - name: Print sysctl reload's result
+      ansible.builtin.debug:
+        var: sysctl_reload_result.stdout_lines
+    - name: Capture IP interface
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ip route list default | grep dev | awk '{print $5}'
+      register: ip_interface
+      changed_when: false
+    - name: Print the interface to be used in the WG config
+      ansible.builtin.debug:
+        msg: "The interface to be used in the WG config: {{ ip_interface.stdout }}"
+    - name: Write the Wireguard config file
+      ansible.builtin.template:
+        src: template/wg0.conf.j2
+        dest: "/etc/wireguard/wg0.conf"
+        mode: "0755"
+        owner: "root"
+        group: "root"
+      become: true
+    - name: Open Wireguard port in firewall
+      ansible.builtin.command:
+        cmd: ufw allow 51820/udp
+      changed_when: true
+      become: true
+    - name: Reload firewall
+      ansible.builtin.shell:
+        cmd: ufw disable && ufw --force enable
+      changed_when: true
+      become: true
+    - name: Register firewall status
+      ansible.builtin.command:
+        cmd: ufw status verbose
+      become: true
+      changed_when: false
+      register: firewall_status_verbose
+    - name: Print firewall status
+      ansible.builtin.debug:
+        var: firewall_status_verbose.stdout_lines
+    - name: Enable WG systemd service
+      ansible.builtin.systemd:
+        name: wg-quick@wg0.service
+        state: started
+        enabled: true
+        daemon_reload: true
+      become: true
+    - name: Register Wireguard service status
+      ansible.builtin.command:
+        cmd: systemctl status wg-quick@wg0.service
+      become: true
+      changed_when: false
+      register: wg_service_status
+    - name: Print Wireguard service status
+      ansible.builtin.debug:
+        var: wg_service_status.stdout_lines
