@@ -14,6 +14,10 @@
     - name: ssh_config_server_alias
       prompt: The server's alias to be used in the SSH config
       private: false
+    - name: timezone
+      prompt: The server's timezone
+      default: "Europe/Moscow"
+      private: false
     - name: apt_upgrade
       prompt: Upgrade packages (yes/no)?
       default: "yes"
@@ -215,7 +219,7 @@
       block:
         - name: Set timezone
           community.general.timezone:
-            name: "Europe/Moscow"
+            name: "{{ timezone }}"
           become: true
         - name: Set maximum journal size
           ansible.builtin.lineinfile:
