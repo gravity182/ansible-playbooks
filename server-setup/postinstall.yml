@@ -31,8 +31,6 @@
       default: "no"
       private: false
   vars:
-    remote_ansible_host: "{{ ansible_host }}"
-    remote_ansible_port: "{{ ansible_port }}"
     ssh_key_filename: "id_rsa_{{ ssh_config_server_alias }}@{{ username }}"
     ssh_port: "2000"
   tasks:
@@ -42,6 +40,9 @@
       changed_when: false
       delegate_to: localhost
       register: local_whoami
+    - name: Set remote IP
+      ansible.builtin.set_fact:
+        remote_ipv4: "{{ ansible_default_ipv4.address | default(ansible_all_ipv4_addresses[0]) }}"
     - name: Register architecture
       ansible.builtin.command:
         cmd: dpkg --print-architecture
@@ -56,6 +57,7 @@
       register: distrib_codename
       become: true
     - name: Perform apt full-upgrade
+      when: apt_upgrade | bool
       ansible.builtin.apt:
         upgrade: "full"
         update_cache: true
@@ -63,12 +65,11 @@
         autoremove: true
         dpkg_options: "force-confdef,force-confold" # see explanation https://unix.stackexchange.com/a/642541
       become: true
-      when: apt_upgrade | bool
       register: upgrade_result
     - name: Reboot the machine after upgrading  # noqa: no-handler
+      when: upgrade_result.changed
       ansible.builtin.reboot:
         reboot_timeout: 120
-      when: upgrade_result.changed
     - name: Create user with sudo privileges
       ansible.builtin.user:
         name: "{{ username }}"
@@ -187,7 +188,7 @@
             dest: ~/.ssh/config
             block: |
               Host {{ ssh_config_server_alias }}
-                  HostName {{ remote_ansible_host }}
+                  HostName {{ remote_ipv4 }}
                   Port {{ ssh_port }}
                   User {{ username }}
                   ServerAliveInterval 120
@@ -234,7 +235,7 @@
             cmd: locale-gen "en_US.UTF-8"
           changed_when: true
           become: true
-    - name: Add basic shell configuration
+    - name: Basic shell configuration
       block:
         - name: Set important env vars
           ansible.builtin.lineinfile:
@@ -439,9 +440,11 @@
       ansible.builtin.reboot:
         reboot_timeout: 1
       failed_when: false
+    # we can't use the reboot command for awaiting here since the ssh port has been changed earlier
     - name: Wait for the machine reboot
       delegate_to: localhost
       ansible.builtin.wait_for:
         port: "{{ ssh_port }}"
-        host: "{{ ssh_config_server_alias }}"
-        timeout: 600
+        host: "{{ remote_ipv4 }}"
+        delay: 10
+        timeout: 60
