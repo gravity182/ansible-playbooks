@@ -7,7 +7,6 @@
       private: true
       confirm: true
   vars:
-    user: "{{ ansible_user }}"
     webui_port: "6780"
   tasks:
     - name: Check if Docker is installed
