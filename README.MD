@@ -2,7 +2,7 @@
 
 Playbooks:
 
-- [Ubuntu Server Set-Up](server-setup) - Sets up Ubuntu server. Configures a new user, SSH key, fail2ban, useful utils, and more. This is the playbook I personally use everytime I create a new VPS
+- [VPS Server Set-Up](server-setup) - Sets up Ubuntu VPS server. Configures a new user, unattended-upgrades, SSH key, ufw, fail2ban, useful utils, and more
 - [rTorrent](rtorrent) - Installs rTorrent
 - [qBittorrent](qbittorrent) - Installs qBittorrent
 - [WireGuard VPN](vpn) - Installs WireGuard VPN
