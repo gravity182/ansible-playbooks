@@ -40,7 +40,7 @@
       changed_when: false
       delegate_to: localhost
       register: local_whoami
-    - name: Set remote IP
+    - name: Set server's IP
       ansible.builtin.set_fact:
         remote_ipv4: "{{ ansible_default_ipv4.address | default(ansible_all_ipv4_addresses[0]) }}"
     - name: Register architecture
@@ -63,28 +63,80 @@
         update_cache: true
         cache_valid_time: 0
         autoremove: true
+        autoclean: true
         dpkg_options: "force-confdef,force-confold" # see explanation https://unix.stackexchange.com/a/642541
       become: true
       register: upgrade_result
+    - name: Set up unattended-upgrades
+      block:
+        - name: Install unattended-upgrades
+          ansible.builtin.apt:
+            package: unattended-upgrades
+            state: present
+        - name: Enable unattended-upgrades
+          ansible.builtin.debconf:
+            pkg: unattended-upgrades
+            setting: unattended-upgrades/enable_auto_updates
+            value: "true"
+            vtype: boolean
+        - name: Configure unattended-upgrades
+          ansible.builtin.blockinfile:
+            path: /etc/apt/apt.conf.d/50unattended-upgrades
+            create: yes
+            block: |
+              Unattended-Upgrade::Allowed-Origins {
+                  "${distro_id}:${distro_codename}";
+                  "${distro_id}:${distro_codename}-security";
+                  "${distro_id}ESMApps:${distro_codename}-apps-security";
+                  "${distro_id}ESM:${distro_codename}-infra-security";
+              };
+              Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+              Unattended-Upgrade::MinimalSteps "true";
+              Unattended-Upgrade::InstallOnShutdown "false";
+              Unattended-Upgrade::Remove-Unused-Dependencies "true";
+              Unattended-Upgrade::Automatic-Reboot "true";
+              Unattended-Upgrade::Automatic-Reboot-Time "07:00";
+        - name: Configure automatic updates
+          ansible.builtin.blockinfile:
+            path: /etc/apt/apt.conf.d/20auto-upgrades
+            create: yes
+            block: |
+              APT::Periodic::Update-Package-Lists "1";
+              APT::Periodic::Download-Upgradeable-Packages "1";
+              APT::Periodic::Unattended-Upgrade "1";
+              APT::Periodic::AutocleanInterval "7";
+        - name: Enable the unattended-upgrades service
+          ansible.builtin.service:
+            name: unattended-upgrades
+            state: started
+            enabled: yes
     - name: Reboot the machine after upgrading  # noqa: no-handler
       when: upgrade_result.changed
       ansible.builtin.reboot:
         reboot_timeout: 120
-    - name: Create user with sudo privileges
-      ansible.builtin.user:
-        name: "{{ username }}"
-        groups:
-          - sudo
-        append: true
-        shell: /bin/bash
-        state: present
-        generate_ssh_key: false
-        password: "{{ password }}"
-        update_password: always
-      become: true
-    - name: User created
-      ansible.builtin.debug:
-        msg: "Created user '{{ username }}'"
+    - name: Set up the new user
+      block:
+        - name: Create user with sudo privileges
+          ansible.builtin.user:
+            name: "{{ username }}"
+            groups:
+              - sudo
+            append: true
+            shell: /bin/bash
+            state: present
+            generate_ssh_key: false
+            password: "{{ password }}"
+            update_password: always
+          become: true
+        - name: Configure sudo privileges for the new user
+          ansible.builtin.copy:
+            dest: "/etc/sudoers.d/{{ username }}"
+            content: "{{ username }} ALL=(ALL) ALL"
+            mode: '0440'
+            validate: /usr/sbin/visudo -cf %s
+        - name: User created
+          ansible.builtin.debug:
+            msg: "Created user '{{ username }}'"
     - name: Set up firewall (ufw)
       block:
         - name: Ensure firewall is installed
@@ -134,12 +186,6 @@
             name: fail2ban
             state: present
           become: true
-        - name: Ensure fail2ban service is running
-          ansible.builtin.service:
-            name: fail2ban
-            state: started
-            enabled: true
-          become: true
         - name: Configure fail2ban
           ansible.builtin.blockinfile:
             path: "/etc/fail2ban/jail.local"
@@ -156,11 +202,19 @@
               [sshd]
               enabled = true
               port = {{ ssh_port }}
+              filter = sshd
+              logpath = /var/log/auth.log
               backend = systemd
             state: present
             mode: "0644"
             create: true
             backup: true
+          become: true
+        - name: Ensure fail2ban service is running
+          ansible.builtin.service:
+            name: fail2ban
+            state: started
+            enabled: true
           become: true
     - name: Set up SSH authentication
       block:
@@ -205,17 +259,26 @@
             backup: "yes"
           delegate_to: localhost
         - name: Configure sshd
-          ansible.builtin.blockinfile:
-            path: "/etc/ssh/sshd_config"
-            block: |
-              Port {{ ssh_port }}
-              PasswordAuthentication no
-              PermitRootLogin no
-              PubkeyAuthentication yes
-              AuthorizedKeysFile .ssh/authorized_keys
-              MaxAuthTries 5
-              MaxSessions 10
-              AllowUsers {{ username }}
+          ansible.builtin.lineinfile:
+            path: /etc/ssh/sshd_config
+            regexp: "{{ item.regexp }}"
+            line: "{{ item.line }}"
+            state: present
+          loop:
+            - { regexp: '^#?Port', line: 'Port {{ ssh_port }}' }
+            - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }  # Disable password auth
+            - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+            - { regexp: '^#?ChallengeResponseAuthentication', line: 'ChallengeResponseAuthentication no' }  # Disable challenge-response auth
+            - { regexp: '^#?UsePAM', line: 'UsePAM no' }  # Disable PAM authentication
+            - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }  # Ensure public key authentication is enabled
+            - { regexp: '^#?AuthorizedKeysFile', line: 'AuthorizedKeysFile .ssh/authorized_keys' }  # Ensure public key authentication is enabled
+            - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries 5' }  # Ensure public key authentication is enabled
+            - { regexp: '^#?MaxSessions', line: 'MaxSessions 10' }  # Ensure public key authentication is enabled
+            - { regexp: '^#?AllowUsers', line: 'AllowUsers {{ username }}' }  # Ensure public key authentication is enabled
+        - name: Restart ssh
+          ansible.builtin.service:
+            name: ssh
+            state: restarted
     - name: System config tweaks
       block:
         - name: Set timezone
@@ -230,6 +293,19 @@
             state: present
             backup: "yes"
           become: true
+        # see https://github.com/kairos-io/kairos/issues/2071#issuecomment-1877252420
+        - name: Tune sysctl fs.inotify.max_user_instances
+          ansible.posix.sysctl:
+            name: fs.inotify.max_user_instances
+            value: '8192'
+            sysctl_set: true
+            state: present
+        - name: Tune sysctl fs.inotify.max_user_watches
+          ansible.posix.sysctl:
+            name: fs.inotify.max_user_watches
+            value: '1048576'
+            sysctl_set: true
+            state: present
         - name: Generate locale
           ansible.builtin.command:
             cmd: locale-gen "en_US.UTF-8"
@@ -436,7 +512,7 @@
         group: "{{ username }}"
         recurse: true
       become: true
-    - name: Set-Up finished successfully - now rebooting the machine
+    - name: Playbook finished successfully - rebooting the machine
       ansible.builtin.reboot:
         reboot_timeout: 1
       failed_when: false
@@ -444,7 +520,7 @@
     - name: Wait for the machine reboot
       delegate_to: localhost
       ansible.builtin.wait_for:
-        port: "{{ ssh_port }}"
         host: "{{ remote_ipv4 }}"
+        port: "{{ ssh_port }}"
         delay: 10
         timeout: 60
