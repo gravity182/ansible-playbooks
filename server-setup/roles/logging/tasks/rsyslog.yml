@@ -1,0 +1,25 @@
+---
+- name: Create apps log directory
+  ansible.builtin.file:
+    path: /var/log/apps
+    state: directory
+    mode: "0755"
+    owner: root
+    group: adm
+  become: true
+
+- name: Copy rsyslog configuration
+  ansible.builtin.copy:
+    src: rsyslog.conf
+    dest: /etc/rsyslog.conf
+    owner: root
+    group: root
+    mode: "0644"
+    backup: "yes"
+  become: true
+
+- name: Ensure rsyslog service is enabled
+  ansible.builtin.service:
+    name: rsyslog
+    enabled: true
+  become: true

@@ -1,0 +1,47 @@
+---
+- name: Generate SSH key pair locally
+  ansible.builtin.user:
+    name: "{{ local_whoami.stdout }}"
+    generate_ssh_key: true
+    ssh_key_type: rsa
+    ssh_key_bits: 3072
+    ssh_key_passphrase: ""
+    ssh_key_file: "~/.ssh/{{ ssh_key_filename }}"
+  delegate_to: localhost
+  register: generated_keys
+
+- name: Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: "/home/{{ username }}/.ssh"
+    state: directory
+    mode: "0700"
+  become: false
+
+- name: Push public key to remote host
+  ansible.posix.authorized_key:
+    user: "{{ username }}"
+    state: present
+    key: "{{ generated_keys.ssh_public_key }}"
+  become: true
+
+- name: Create a local SSH config
+  ansible.builtin.blockinfile:
+    dest: ~/.ssh/config
+    block: |
+      Host {{ ssh_config_server_alias }}
+          HostName {{ remote_ipv4 }}
+          Port {{ ssh_port }}
+          User {{ username }}
+          ServerAliveInterval 120
+          ServerAliveCountMax 3
+          IdentityFile ~/.ssh/{{ ssh_key_filename }}
+    insertafter: EOF
+    marker: "# {mark} ANSIBLE MANAGED SSH CONFIG"
+    marker_begin: "{{ ssh_config_server_alias }} BEGIN"
+    marker_end: "{{ ssh_config_server_alias }} END"
+    append_newline: true
+    create: true
+    mode: "0755"
+    state: present
+    backup: "yes"
+  delegate_to: localhost

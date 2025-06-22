@@ -1,4 +1,4 @@
-# Ubuntu Server Set-Up Playbook
+# VPS Server Set-Up Playbook
 
 What it does:
 
@@ -8,7 +8,7 @@ What it does:
 4. Sets up fail2ban and pre-configures it for sshd
 5. Sets up SSH keys, disables password-based and root user login
 6. Installs useful utils
-7. (Optional) Installs Docker/[K3s](https://k3s.io/)
+7. (Optional) Installs either K3s or Docker container runtime
 
 The SSH port is changed to `2000`. This will reject most of the malicious users since they're usually trying only the standard `22` port.
 

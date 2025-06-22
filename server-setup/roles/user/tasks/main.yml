@@ -1,0 +1,33 @@
+---
+- name: Create user with sudo privileges
+  ansible.builtin.user:
+    name: "{{ username }}"
+    groups:
+      - sudo
+    append: true
+    shell: /bin/bash
+    state: present
+    generate_ssh_key: false
+    password: "{{ password }}"
+    update_password: always
+  become: true
+
+- name: Configure sudo privileges
+  ansible.builtin.template:
+    src: sudoers.j2
+    dest: "/etc/sudoers.d/{{ username }}"
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+  become: true
+
+- name: Ensure home directory permissions
+  ansible.builtin.file:
+    path: "/home/{{ username }}"
+    mode: "0750"
+    owner: "{{ username }}"
+    group: "{{ username }}"
+    recurse: false
+  become: true
+
+- name: Include SSH configuration tasks
+  ansible.builtin.import_tasks: ssh.yml

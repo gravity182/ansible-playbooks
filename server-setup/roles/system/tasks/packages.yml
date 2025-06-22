@@ -1,0 +1,77 @@
+---
+- name: Perform apt full-upgrade
+  when: apt_upgrade | bool
+  ansible.builtin.apt:
+    upgrade: "full"
+    update_cache: true
+    cache_valid_time: 0
+    autoremove: true
+    autoclean: true
+    dpkg_options: "force-confdef,force-confold"
+  become: true
+  notify: Reboot server
+
+- name: Set up unattended-upgrades
+  block:
+    - name: Install unattended-upgrades
+      ansible.builtin.apt:
+        package: unattended-upgrades
+        state: present
+      become: true
+
+    - name: Enable unattended-upgrades
+      ansible.builtin.debconf:
+        pkg: unattended-upgrades
+        setting: unattended-upgrades/enable_auto_updates
+        value: "true"
+        vtype: boolean
+      become: true
+
+    - name: Configure unattended-upgrades
+      ansible.builtin.copy:
+        src: "50unattended-upgrades"
+        dest: "/etc/apt/apt.conf.d/50unattended-upgrades"
+        mode: "0644"
+      become: true
+
+    - name: Configure automatic updates
+      ansible.builtin.copy:
+        src: "20auto-upgrades"
+        dest: "/etc/apt/apt.conf.d/20auto-upgrades"
+        mode: "0644"
+      become: true
+
+    - name: Enable unattended-upgrades service
+      ansible.builtin.service:
+        name: unattended-upgrades
+        state: started
+        enabled: "yes"
+      become: true
+
+- name: Install useful system utilities
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - wget
+      - vim
+      - htop
+      - atop
+      - iftop
+      - iotop
+      - ncdu
+      - bash-completion
+      - jq
+      - zip
+      - hyperfine
+      - cockpit
+    state: present
+  become: true
+
+- name: Enable cockpit service
+  ansible.builtin.service:
+    name: cockpit
+    state: started
+    enabled: true
+  become: true
+  notify: Restart cockpit

@@ -1,0 +1,10 @@
+---
+- name: Reboot server
+  ansible.builtin.reboot:
+    reboot_timeout: 120
+
+- name: Restart cockpit
+  ansible.builtin.systemd:
+    name: cockpit
+    state: restarted
+  become: true

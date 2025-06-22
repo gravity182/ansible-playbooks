@@ -1,0 +1,34 @@
+---
+- name: Copy logrotate configuration
+  ansible.builtin.copy:
+    src: logrotate.conf
+    dest: /etc/logrotate.conf
+    owner: root
+    group: root
+    mode: "0644"
+    backup: "yes"
+  become: true
+
+- name: Copy system logs rotation config
+  ansible.builtin.copy:
+    src: logrotate.d/system-logs
+    dest: /etc/logrotate.d/system-logs
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Copy application logs rotation config
+  ansible.builtin.copy:
+    src: logrotate.d/application-logs
+    dest: /etc/logrotate.d/application-logs
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Ensure logrotate service is enabled
+  ansible.builtin.service:
+    name: logrotate
+    enabled: true
+  become: true

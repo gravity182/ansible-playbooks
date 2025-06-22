@@ -1,0 +1,17 @@
+---
+- name: Install logging packages
+  ansible.builtin.apt:
+    name:
+      - rsyslog
+      - logrotate
+    state: present
+  become: true
+
+- name: Import journald tasks
+  ansible.builtin.import_tasks: journald.yml
+
+- name: Import rsyslog tasks
+  ansible.builtin.import_tasks: rsyslog.yml
+
+- name: Import logrotate tasks
+  ansible.builtin.import_tasks: logrotate.yml

@@ -1,0 +1,99 @@
+---
+- name: VPS Server Set-Up
+  hosts: remotehost
+  gather_facts: true
+
+  vars_prompt:
+    - name: username
+      prompt: The name of a user to create
+      private: false
+    - name: password
+      prompt: The password of a user to create
+      private: true
+      encrypt: sha512_crypt
+      confirm: true
+      salt_size: 8
+    - name: ssh_config_server_alias
+      prompt: The server's alias to be used in the local SSH config
+      private: false
+    - name: timezone
+      prompt: The server's timezone
+      default: "Europe/Moscow"
+      private: false
+    - name: apt_upgrade
+      prompt: Upgrade packages (yes/no)?
+      default: "yes"
+      private: false
+    - name: container_runtime
+      prompt: "Choose container runtime (k3s/docker/none)"
+      default: "none"
+      private: false
+
+  pre_tasks:
+    - name: Check OS family
+      ansible.builtin.fail:
+        msg: "This playbook only supports Debian-based systems"
+      when: ansible_os_family != "Debian"
+
+    - name: Register local user
+      ansible.builtin.command:
+        cmd: whoami
+      changed_when: false
+      delegate_to: localhost
+      register: local_whoami
+
+    - name: Register architecture
+      ansible.builtin.command:
+        cmd: dpkg --print-architecture
+      changed_when: false
+      register: arch
+      become: true
+
+    - name: Register distribution codename
+      ansible.builtin.shell:
+        cmd: source /etc/os-release && echo "${VERSION_CODENAME:-$UBUNTU_CODENAME}"
+        executable: /bin/bash
+      changed_when: false
+      register: distrib_codename
+      become: true
+
+    - name: Set server's IP
+      ansible.builtin.set_fact:
+        remote_ipv4: "{{ ansible_default_ipv4.address | default(ansible_all_ipv4_addresses[0]) }}"
+
+  roles:
+    - role: system
+      tags: [system, packages]
+
+    - role: logging
+      tags: [logging]
+
+    - role: security
+      tags: [security]
+
+    - role: user
+      tags: [user]
+
+    - role: k3s
+      when: container_runtime == "k3s"
+      tags: [k3s]
+
+    - role: docker
+      when: container_runtime == "docker"
+      tags: [docker]
+
+  post_tasks:
+    - name: Final reboot
+      block:
+        - name: Reboot the server
+          ansible.builtin.reboot:
+            reboot_timeout: 1
+          failed_when: false
+
+        - name: Wait for SSH port
+          delegate_to: localhost
+          ansible.builtin.wait_for:
+            host: "{{ remote_ipv4 }}"
+            port: "{{ ssh_port }}"
+            delay: 10
+            timeout: 60

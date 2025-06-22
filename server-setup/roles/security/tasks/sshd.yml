@@ -1,0 +1,22 @@
+---
+- name: Configure sshd
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?{{ item.key }}"
+    line: "{{ item.key }} {{ item.value }}"
+    state: present
+    backup: "yes"
+    validate: /usr/sbin/sshd -t -f %s
+  loop:
+    - { key: "Port", value: "{{ ssh_port }}" }
+    - { key: "PasswordAuthentication", value: "no" } # Disable password auth
+    - { key: "PermitRootLogin", value: "no" } # Disable root login
+    - { key: "ChallengeResponseAuthentication", value: "no" } # Disable challenge-response auth
+    - { key: "UsePAM", value: "no" } # Disable PAM authentication
+    - { key: "PubkeyAuthentication", value: "yes" } # Ensure public key authentication is enabled
+    - { key: "AuthorizedKeysFile", value: ".ssh/authorized_keys" } # Ensure public key authentication is enabled
+    - { key: "MaxAuthTries", value: "5" } # Ensure public key authentication is enabled
+    - { key: "MaxSessions", value: "10" } # Ensure public key authentication is enabled
+    - { key: "AllowUsers", value: "{{ username }}" } # Ensure public key authentication is enabled
+  become: true
+  notify: Restart sshd

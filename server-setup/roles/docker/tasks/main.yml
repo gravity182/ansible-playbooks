@@ -1,0 +1,91 @@
+---
+- name: Remove old Docker packages
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-doc
+      - docker-compose
+      - docker-compose-v2
+      - podman-docker
+      - containerd
+      - runc
+    state: absent
+  become: true
+
+- name: Install dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+    state: present
+  become: true
+
+- name: Add Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+    force: true
+  become: true
+
+- name: Add Docker APT repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ arch.stdout }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ distrib_codename.stdout }} stable"
+    filename: docker
+    state: present
+    update_cache: true
+  become: true
+
+- name: Install Docker packages
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+  become: true
+  notify:
+    - Restart containerd
+    - Restart Docker
+
+- name: Enable Docker services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    enabled: true
+  loop:
+    - docker
+    - containerd
+  become: true
+
+- name: Test Docker installation
+  ansible.builtin.command:
+    cmd: docker run --rm hello-world
+  register: docker_test_cmd
+  changed_when: false
+  failed_when: docker_test_cmd.rc != 0
+  become: true
+
+- name: Ensure docker group exists
+  ansible.builtin.group:
+    name: docker
+    state: present
+  become: true
+
+- name: Add user to docker group
+  ansible.builtin.user:
+    name: "{{ username }}"
+    groups:
+      - docker
+    append: true
+  become: true
+
+- name: Install lazydocker
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      curl -sSfL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | bash
+    executable: /bin/bash
+    creates: "lazydocker"
+  become: true
+  become_user: "{{ username }}"

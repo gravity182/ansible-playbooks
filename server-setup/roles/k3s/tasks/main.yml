@@ -1,0 +1,32 @@
+---
+- name: Install K3s
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      curl -sfL https://get.k3s.io | sh -
+    executable: /bin/bash
+    creates: "k3s"
+  become: true
+  become_user: "{{ username }}"
+  notify: Restart K3s
+
+- name: Configure firewall for K3s
+  block:
+    - name: Allow K3s API port
+      community.general.ufw:
+        rule: allow
+        port: '6443'
+        proto: tcp
+      become: true
+      notify: Reload firewall
+
+    - name: Allow K3s pod and service networks
+      community.general.ufw:
+        rule: allow
+        from: '{{ item }}'
+        to: any
+      loop:
+        - 10.42.0.0/16  # Pod network
+        - 10.43.0.0/16  # Service network
+      become: true
+      notify: Reload firewall
