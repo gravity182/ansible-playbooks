@@ -1,4 +1,12 @@
 ---
+- name: Ensure .bashrc exists
+  ansible.builtin.file:
+    path: "/home/{{ username }}/.bashrc"
+    owner: "{{ username }}"
+    group: "{{ username }}"
+    mode: "0644"
+    state: touch
+
 - name: Set environment variables
   ansible.builtin.lineinfile:
     path: "/home/{{ username }}/.bashrc"
@@ -20,18 +28,16 @@
 
 - name: Configure Vim
   ansible.builtin.copy:
-    src: vimrc
+    src: .vimrc
     dest: "/home/{{ username }}/.vimrc"
-    mode: "0755"
+    mode: "0644"
     owner: "{{ username }}"
     group: "{{ username }}"
-  become: true
 
 - name: Configure readline
   ansible.builtin.copy:
-    src: inputrc
+    src: .inputrc
     dest: "/home/{{ username }}/.inputrc"
     mode: "0644"
     owner: "{{ username }}"
     group: "{{ username }}"
-  become: true

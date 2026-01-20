@@ -7,11 +7,12 @@
     cache_valid_time: 0
     autoremove: true
     autoclean: true
+    # confdef: if the conffile was not modified locally -> install the maintainer’s new version automatically
+    # confold: if the conffile was modified locally -> keep your existing (old) one automatically
     dpkg_options: "force-confdef,force-confold"
   become: true
-  notify: Reboot server
 
-- name: Set up unattended-upgrades
+- name: Set up apt auto-upgrades
   block:
     - name: Install unattended-upgrades
       ansible.builtin.apt:
@@ -19,12 +20,13 @@
         state: present
       become: true
 
-    - name: Enable unattended-upgrades
-      ansible.builtin.debconf:
-        pkg: unattended-upgrades
-        setting: unattended-upgrades/enable_auto_updates
-        value: "true"
-        vtype: boolean
+    - name: Configure auto-upgrades
+      ansible.builtin.copy:
+        src: "20auto-upgrades"
+        dest: "/etc/apt/apt.conf.d/20auto-upgrades"
+        mode: "0644"
+        owner: root
+        group: root
       become: true
 
     - name: Configure unattended-upgrades
@@ -32,46 +34,31 @@
         src: "50unattended-upgrades"
         dest: "/etc/apt/apt.conf.d/50unattended-upgrades"
         mode: "0644"
-      become: true
-
-    - name: Configure automatic updates
-      ansible.builtin.copy:
-        src: "20auto-upgrades"
-        dest: "/etc/apt/apt.conf.d/20auto-upgrades"
-        mode: "0644"
+        owner: root
+        group: root
       become: true
 
     - name: Enable unattended-upgrades service
-      ansible.builtin.service:
+      ansible.builtin.systemd:
         name: unattended-upgrades
         state: started
-        enabled: "yes"
+        enabled: true
+      become: true
+
+    - name: Enable apt daily timers
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - apt-daily.timer
+        - apt-daily-upgrade.timer
       become: true
 
 - name: Install useful system utilities
   ansible.builtin.apt:
-    name:
-      - git
-      - curl
-      - wget
-      - vim
-      - htop
-      - atop
-      - iftop
-      - iotop
-      - ncdu
-      - bash-completion
-      - jq
-      - zip
-      - hyperfine
-      - cockpit
+    update_cache: true
+    cache_valid_time: 3600
+    name: "{{ system_packages }}"
     state: present
   become: true
-
-- name: Enable cockpit service
-  ansible.builtin.service:
-    name: cockpit
-    state: started
-    enabled: true
-  become: true
-  notify: Restart cockpit

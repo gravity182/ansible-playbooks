@@ -1,0 +1,26 @@
+---
+# Timezone configuration
+timezone: "UTC"
+
+# APT upgrade configuration
+apt_upgrade: true
+
+# System utilities to install
+system_packages:
+  - bash
+  - bash-completion
+  - git
+  - curl
+  - wget
+  - vim
+  - htop
+  - atop
+  - iftop
+  - iotop
+  - fd-find
+  - ripgrep
+  - ncdu
+  - jq
+  - yq
+  - zip
+  - hyperfine

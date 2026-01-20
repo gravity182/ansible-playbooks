@@ -1,9 +1,9 @@
 ---
+- name: Include SSH daemon configuration tasks
+  ansible.builtin.import_tasks: sshd.yml
+
 - name: Include firewall tasks
   ansible.builtin.import_tasks: firewall.yml
 
 - name: Include fail2ban tasks
   ansible.builtin.import_tasks: fail2ban.yml
-
-- name: Include SSH daemon configuration tasks
-  ansible.builtin.import_tasks: sshd.yml

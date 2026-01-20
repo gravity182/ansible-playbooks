@@ -1,0 +1,7 @@
+---
+# User shell configuration
+user_shell: /bin/bash
+
+# SSH key configuration
+ssh_key_type: rsa
+ssh_key_bits: 3072

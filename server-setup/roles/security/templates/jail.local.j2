@@ -1,9 +1,9 @@
 [DEFAULT]
-bantime = 24h
+bantime = {{ fail2ban_bantime }}
 bantime.increment = true
 bantime.factor = 1
-findtime = 10m
-maxretry = 5
+findtime = {{ fail2ban_findtime }}
+maxretry = {{ fail2ban_maxretry }}
 backend = auto
 usedns = warn
 

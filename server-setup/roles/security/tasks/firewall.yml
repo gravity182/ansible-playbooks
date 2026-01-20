@@ -34,13 +34,13 @@
   become: true
   notify: Reload firewall
 
-- name: Register firewall's status
+- name: Validate firewall status
   ansible.builtin.command:
     cmd: ufw status verbose
   changed_when: false
   register: firewall_status_verbose
   become: true
 
-- name: Print firewall's status
+- name: Print firewall status
   ansible.builtin.debug:
     var: firewall_status_verbose.stdout_lines

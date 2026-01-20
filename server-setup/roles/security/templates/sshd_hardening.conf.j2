@@ -1,0 +1,47 @@
+# Ansible managed SSH hardening configuration
+#
+
+# Custom SSH port (not well-known)
+Port {{ ssh_port }}
+
+# Use only public key authentication
+AuthenticationMethods publickey
+PubkeyAuthentication yes
+
+# Disable password authentication
+PasswordAuthentication no
+
+# Disable root login
+PermitRootLogin no
+
+# Disable challenge-response authentication
+ChallengeResponseAuthentication no
+
+# Disable PAM authentication
+UsePAM no
+
+# Tighten connection behavior
+LogLevel VERBOSE
+LoginGraceTime 30
+MaxStartups 10:30:60
+UseDNS no
+TCPKeepAlive no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+# Enable public key authentication
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Forwarding and tunneling controls
+AllowTcpForwarding local
+AllowAgentForwarding no
+X11Forwarding no
+PermitTunnel no
+
+# Connection limits
+MaxAuthTries 5
+MaxSessions 10
+
+# Restrict to specific user
+AllowUsers {{ username }}

@@ -1,11 +1,11 @@
 ---
-- name: Create user with sudo privileges
+- name: Create the user with sudo privileges
   ansible.builtin.user:
     name: "{{ username }}"
     groups:
       - sudo
     append: true
-    shell: /bin/bash
+    shell: "{{ user_shell }}"
     state: present
     generate_ssh_key: false
     password: "{{ password }}"
@@ -31,3 +31,6 @@
 
 - name: Include SSH configuration tasks
   ansible.builtin.import_tasks: ssh.yml
+
+- name: Configure shell environment
+  ansible.builtin.import_tasks: shell.yml

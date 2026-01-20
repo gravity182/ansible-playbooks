@@ -8,14 +8,21 @@
     group: adm
   become: true
 
-- name: Copy rsyslog configuration
+- name: Deploy rsyslog application logging
   ansible.builtin.copy:
-    src: rsyslog.conf
-    dest: /etc/rsyslog.conf
+    src: rsyslog.d/99-application-logs.conf
+    dest: /etc/rsyslog.d/99-application-logs.conf
     owner: root
     group: root
     mode: "0644"
     backup: "yes"
+  become: true
+  notify: Restart rsyslog
+
+- name: Validate rsyslog configuration
+  ansible.builtin.command:
+    cmd: rsyslogd -N1
+  changed_when: false
   become: true
 
 - name: Ensure rsyslog service is enabled

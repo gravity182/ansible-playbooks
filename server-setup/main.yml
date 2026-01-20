@@ -28,14 +28,24 @@
       prompt: "Choose container runtime (k3s/docker/none)"
       default: "none"
       private: false
+  vars:
+    ssh_key_filename: "id_rsa_{{ ssh_config_server_alias }}@{{ username }}"
+    ssh_port: "2000"
 
   pre_tasks:
-    - name: Check OS family
-      ansible.builtin.fail:
-        msg: "This playbook only supports Debian-based systems"
-      when: ansible_os_family != "Debian"
+    - name: Ensure OS is Debian-based
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family in ['Debian']
+        fail_msg: "This playbook only supports Debian-based systems"
 
-    - name: Register local user
+    - name: Ensure SSH port is valid
+      ansible.builtin.assert:
+        that:
+          - ssh_port | int <= 65535
+        fail_msg: "SSH port must be less than or equal to 65535"
+
+    - name: Register localhost user
       ansible.builtin.command:
         cmd: whoami
       changed_when: false
@@ -51,15 +61,19 @@
 
     - name: Register distribution codename
       ansible.builtin.shell:
-        cmd: source /etc/os-release && echo "${VERSION_CODENAME:-$UBUNTU_CODENAME}"
+        cmd: source /etc/os-release && echo "${VERSION_CODENAME}"
         executable: /bin/bash
       changed_when: false
       register: distrib_codename
       become: true
 
-    - name: Set server's IP
+    - name: Set remotehost IP
       ansible.builtin.set_fact:
         remote_ipv4: "{{ ansible_default_ipv4.address | default(ansible_all_ipv4_addresses[0]) }}"
+
+    - name: Set SSH target host
+      ansible.builtin.set_fact:
+        ssh_target_host: "{{ ansible_host | default(remote_ipv4) }}"
 
   roles:
     - role: system
@@ -68,11 +82,11 @@
     - role: logging
       tags: [logging]
 
-    - role: security
-      tags: [security]
-
     - role: user
       tags: [user]
+
+    - role: security
+      tags: [security]
 
     - role: k3s
       when: container_runtime == "k3s"
@@ -83,17 +97,26 @@
       tags: [docker]
 
   post_tasks:
-    - name: Final reboot
-      block:
-        - name: Reboot the server
-          ansible.builtin.reboot:
-            reboot_timeout: 1
-          failed_when: false
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
 
-        - name: Wait for SSH port
-          delegate_to: localhost
-          ansible.builtin.wait_for:
-            host: "{{ remote_ipv4 }}"
-            port: "{{ ssh_port }}"
-            delay: 10
-            timeout: 60
+    - name: Reboot the server
+      ansible.builtin.command: systemctl reboot
+      async: 1
+      poll: 0
+      changed_when: true
+      become: true
+
+    - name: Use the new user and SSH port
+      ansible.builtin.set_fact:
+        ansible_user: "{{ username }}"
+        ansible_port: "{{ ssh_port }}"
+        ansible_ssh_private_key_file: "~/.ssh/{{ ssh_key_filename }}"
+        ansible_ssh_common_args: "-o IdentitiesOnly=yes"
+
+    - name: Reconnect
+      ansible.builtin.meta: reset_connection
+
+    - name: Wait for SSH to accept connections
+      ansible.builtin.wait_for_connection:
+        timeout: 300

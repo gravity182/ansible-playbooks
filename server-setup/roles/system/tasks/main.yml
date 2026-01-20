@@ -4,27 +4,14 @@
     name: "{{ timezone }}"
   become: true
 
-- name: Configure sysctl parameters
-  ansible.posix.sysctl:
-    name: "{{ item.key }}"
-    value: "{{ item.value }}"
-    sysctl_set: true
+- name: Generate locale
+  community.general.locale_gen:
+    name: en_US.UTF-8
     state: present
-  loop:
-    - key: fs.inotify.max_user_instances
-      value: '8192'
-    - key: fs.inotify.max_user_watches
-      value: '524288'
   become: true
 
-- name: Generate locale
-  ansible.builtin.command:
-    cmd: locale-gen "en_US.UTF-8"
-  changed_when: true
-  become: true
+- name: Include sysctl management tasks
+  ansible.builtin.import_tasks: sysctl.yml
 
 - name: Include package management tasks
   ansible.builtin.import_tasks: packages.yml
-
-- name: Configure shell environment
-  ansible.builtin.import_tasks: shell.yml

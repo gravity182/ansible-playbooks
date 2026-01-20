@@ -1,4 +1,4 @@
-- name: Set up WireGuard VPN using wg-easy
+- name: Set up AmneziaWG VPN using amnezia-wg-easy
   hosts: remotehost
   gather_facts: true
   vars_prompt:
@@ -8,7 +8,7 @@
       confirm: true
   vars:
     webui_port: "6780"
-    wg_easy_image: "ghcr.io/wg-easy/wg-easy:14"
+    amnezia_wg_easy_image: "ghcr.io/w0rng/amnezia-wg-easy:14"
   tasks:
     - name: Check if Docker is installed
       ansible.builtin.command:
@@ -16,31 +16,31 @@
       register: docker_version_cmd
       changed_when: false
       failed_when: docker_version_cmd.rc != 0
-    - name: Stop the old wg-easy container
+    - name: Stop the old amnezia-wg-easy container
       ansible.builtin.shell:
         cmd: |
-          docker stop wg-easy && docker rm wg-easy
+          docker stop amnezia-wg-easy && docker rm amnezia-wg-easy
       register: docker_stop_cmd
       changed_when: docker_stop_cmd.rc == 0
       failed_when: false
-    - name: Pull the new wg-easy image
+    - name: Pull the amnezia-wg-easy image
       ansible.builtin.command:
-        cmd: docker pull {{ wg_easy_image }}
+        cmd: docker pull {{ amnezia_wg_easy_image }}
       register: pull_image_cmd
       changed_when: '"Image is up to date" not in pull_image_cmd.stdout'
       failed_when: pull_image_cmd.rc != 0
     - name: Obtain bcrypted hash of the webui password
       ansible.builtin.command:
-        cmd: docker run --rm {{ wg_easy_image }} wgpw "{{ webui_admin_password }}"
+        cmd: docker run --rm {{ amnezia_wg_easy_image }} wgpw "{{ webui_admin_password }}"
       register: password_hash
       failed_when: password_hash.rc != 0
       changed_when: true
-    - name: Run the wg-easy container
+    - name: Run the amnezia-wg-easy container
       # the command above outputs the hash in form of "PASSWORD_HASH='{hash}'" - extract only the hash
       ansible.builtin.shell:
         cmd: >
           docker run -d \
-            --name=wg-easy \
+            --name=amnezia-wg-easy \
             -e LANG=en \
             -e WG_HOST='{{ ansible_default_ipv4.address }}' \
             -e PASSWORD_HASH='{{ password_hash.stdout[15:-1] }}' \
@@ -50,17 +50,17 @@
             -e WG_DEFAULT_DNS="1.1.1.1, 1.0.0.1" \
             -e WG_ALLOWED_IPS="0.0.0.0/0, ::/0" \
             -e WG_DEFAULT_ADDRESS="10.8.0.x" \
-            -v ~/.wg-easy:/etc/wireguard \
+            -v ~/.amnezia-wg-easy:/etc/wireguard \
             -v /lib/modules:/lib/modules:ro \
             -p 127.0.0.1:{{ webui_port }}:51821/tcp \
             -p 51820:51820/udp \
             --cap-add NET_ADMIN \
             --cap-add SYS_MODULE \
-            --device /dev/net/tun:/dev/net/tun \
             --sysctl net.ipv4.ip_forward=1 \
             --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+            --device /dev/net/tun:/dev/net/tun \
             --restart unless-stopped \
-            {{ wg_easy_image }}
+            {{ amnezia_wg_easy_image }}
       register: run_cmd
       changed_when: true
       failed_when: run_cmd.rc != 0

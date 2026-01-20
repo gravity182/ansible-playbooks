@@ -1,22 +1,52 @@
 ---
-- name: Configure sshd
+- name: Ensure sshd_config.d directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+
+- name: Ensure sshd main config includes .d configs
   ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
-    regexp: "^#?{{ item.key }}"
-    line: "{{ item.key }} {{ item.value }}"
+    line: "Include /etc/ssh/sshd_config.d/*.conf"
+    insertafter: EOF
     state: present
-    backup: "yes"
-    validate: /usr/sbin/sshd -t -f %s
-  loop:
-    - { key: "Port", value: "{{ ssh_port }}" }
-    - { key: "PasswordAuthentication", value: "no" } # Disable password auth
-    - { key: "PermitRootLogin", value: "no" } # Disable root login
-    - { key: "ChallengeResponseAuthentication", value: "no" } # Disable challenge-response auth
-    - { key: "UsePAM", value: "no" } # Disable PAM authentication
-    - { key: "PubkeyAuthentication", value: "yes" } # Ensure public key authentication is enabled
-    - { key: "AuthorizedKeysFile", value: ".ssh/authorized_keys" } # Ensure public key authentication is enabled
-    - { key: "MaxAuthTries", value: "5" } # Ensure public key authentication is enabled
-    - { key: "MaxSessions", value: "10" } # Ensure public key authentication is enabled
-    - { key: "AllowUsers", value: "{{ username }}" } # Ensure public key authentication is enabled
+    create: false
   become: true
-  notify: Restart sshd
+
+- name: Configure SSH daemon for security hardening
+  ansible.builtin.template:
+    src: sshd_hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/99-ansible.conf
+    mode: "0644"
+    owner: root
+    group: root
+    backup: true
+  become: true
+  register: ssh_snippet
+
+# Make sure runtime dir exists so validation won’t complain
+- name: Ensure sshd runtime dir exists
+  ansible.builtin.file:
+    path: /run/sshd
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+
+- name: Validate SSH configuration
+  ansible.builtin.command: sshd -t -f /etc/ssh/sshd_config
+  changed_when: false
+  become: true
+  register: ssh_validate
+  failed_when: ssh_validate.rc != 0
+
+- name: Restart sshd
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+  become: true
