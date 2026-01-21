@@ -7,6 +7,7 @@
       private: true
       confirm: true
   vars:
+    wg_port: "51888"
     webui_port: "6780"
     amnezia_wg_easy_image: "ghcr.io/w0rng/amnezia-wg-easy:14"
   tasks:
@@ -45,7 +46,7 @@
             -e WG_HOST='{{ ansible_default_ipv4.address }}' \
             -e PASSWORD_HASH='{{ password_hash.stdout[15:-1] }}' \
             -e PORT=51821 \
-            -e WG_PORT=51820 \
+            -e WG_PORT={{ wg_port }} \
             -e WG_MTU="1420" \
             -e WG_DEFAULT_DNS="1.1.1.1, 1.0.0.1" \
             -e WG_ALLOWED_IPS="0.0.0.0/0, ::/0" \
@@ -53,7 +54,7 @@
             -v ~/.amnezia-wg-easy:/etc/wireguard \
             -v /lib/modules:/lib/modules:ro \
             -p 127.0.0.1:{{ webui_port }}:51821/tcp \
-            -p 51820:51820/udp \
+            -p {{ wg_port }}:{{ wg_port }}/udp \
             --cap-add NET_ADMIN \
             --cap-add SYS_MODULE \
             --sysctl net.ipv4.ip_forward=1 \
