@@ -40,6 +40,7 @@
           ServerAliveCountMax 3
           IdentityFile ~/.ssh/{{ ssh_key_filename }}
           IdentitiesOnly yes
+          ForwardAgent no
     insertafter: EOF
     marker: "# {mark} ANSIBLE MANAGED SSH CONFIG"
     marker_begin: "{{ ssh_config_server_alias }} BEGIN"
