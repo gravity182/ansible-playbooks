@@ -120,3 +120,11 @@
     - name: Wait for SSH to accept connections
       ansible.builtin.wait_for_connection:
         timeout: 300
+
+    - name: Print provisioning summary
+      ansible.builtin.debug:
+        msg:
+          - "Provisioning complete."
+          - "Connect: ssh {{ ssh_config_server_alias }}"
+          - "User: {{ username }} | Port: {{ ssh_port }}"
+          - "Key: ~/.ssh/{{ ssh_key_filename }}"

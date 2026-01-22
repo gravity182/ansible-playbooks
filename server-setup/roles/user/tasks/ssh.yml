@@ -1,4 +1,37 @@
 ---
+- name: Check for existing private SSH key
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.ssh/{{ ssh_key_filename }}"
+  changed_when: false
+  delegate_to: localhost
+  register: ssh_key_private_stat
+
+- name: Check for existing public SSH key
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.ssh/{{ ssh_key_filename }}.pub"
+  changed_when: false
+  delegate_to: localhost
+  register: ssh_key_public_stat
+
+- name: Backup existing local SSH keys if present
+  block:
+    - name: Get backup timestamp
+      ansible.builtin.command: date +%Y%m%d%H%M%S
+      changed_when: false
+      register: ssh_key_backup_ts
+
+    - name: Backup existing private SSH key
+      ansible.builtin.command:
+        cmd: mv "{{ lookup('env', 'HOME') }}/.ssh/{{ ssh_key_filename }}" "{{ lookup('env', 'HOME') }}/.ssh/{{ ssh_key_filename }}.{{ ssh_key_backup_ts.stdout }}.backup"
+      when: ssh_key_private_stat.stat.exists
+
+    - name: Backup existing public SSH key
+      ansible.builtin.command:
+        cmd: mv "{{ lookup('env', 'HOME') }}/.ssh/{{ ssh_key_filename }}.pub" "{{ lookup('env', 'HOME') }}/.ssh/{{ ssh_key_filename }}.pub.{{ ssh_key_backup_ts.stdout }}.backup"
+      when: ssh_key_public_stat.stat.exists
+  delegate_to: localhost
+  when: ssh_key_private_stat.stat.exists or ssh_key_public_stat.stat.exists
+
 - name: Generate SSH key pair
   ansible.builtin.user:
     name: "{{ local_whoami.stdout }}"
