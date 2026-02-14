@@ -1,7 +1,7 @@
 ---
 - name: Restart Docker
   ansible.builtin.systemd:
-    name: docker
+    name: docker.socket
     state: restarted
   become: true
 
