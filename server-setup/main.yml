@@ -58,6 +58,7 @@
       changed_when: false
       register: arch
       become: true
+      tags: always
 
     - name: Register distribution codename
       ansible.builtin.shell:
@@ -66,6 +67,7 @@
       changed_when: false
       register: distrib_codename
       become: true
+      tags: always
 
     - name: Set remotehost IP
       ansible.builtin.set_fact:
