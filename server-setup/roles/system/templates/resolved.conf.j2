@@ -1,0 +1,6 @@
+[Resolve]
+DNS={{ dns_servers | join(' ') }}
+FallbackDNS=
+# Route all queries through global DNS, ignoring DHCP per-link servers
+Domains=~.
+DNSOverTLS={{ dns_over_tls }}

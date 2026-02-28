@@ -15,3 +15,6 @@
 
 - name: Include package management tasks
   ansible.builtin.import_tasks: packages.yml
+
+- name: Include DNS resolver tasks
+  ansible.builtin.import_tasks: dns.yml
