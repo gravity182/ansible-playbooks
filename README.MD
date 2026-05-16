@@ -7,6 +7,7 @@ Playbooks:
 - [qBittorrent](qbittorrent) - Installs qBittorrent
 - [WireGuard VPN](vpn) - Installs WireGuard VPN
 - [wg-easy](wg-easy) - Installs WireGuard VPN using [wg-easy](https://github.com/wg-easy/wg-easy). More user-friendly variant, includes WebUI
+- [Proxy](proxy) - Installs Tinyproxy with generated BasicAuth credentials
 
 ## Required dependencies
 

@@ -1,0 +1,229 @@
+---
+- name: Install Tinyproxy
+  hosts: remotehost
+  gather_facts: true
+  vars:
+    tinyproxy_port: "58080"
+    tinyproxy_listen_address: "0.0.0.0"
+    tinyproxy_timeout: "600"
+    tinyproxy_log_level: "Connect"
+    tinyproxy_max_clients: "100"
+    tinyproxy_connect_ports:
+      - "443"
+    tinyproxy_config_dir: /etc/tinyproxy
+    tinyproxy_credentials_file: "{{ tinyproxy_config_dir }}/credentials"
+
+  tasks:
+    - name: Ensure OS is Debian-based
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family in ['Debian']
+        fail_msg: "This playbook only supports Debian-based systems"
+
+    - name: Validate Tinyproxy settings
+      ansible.builtin.assert:
+        that:
+          - tinyproxy_port | int >= 1
+          - tinyproxy_port | int <= 65535
+          - tinyproxy_max_clients | int >= 1
+          - tinyproxy_listen_address | length > 0
+          - tinyproxy_connect_ports is iterable
+          - tinyproxy_connect_ports is not string
+          - tinyproxy_connect_ports | length > 0
+          - (tinyproxy_username is not defined and tinyproxy_password is not defined) or (tinyproxy_username is defined and tinyproxy_password is defined)
+        fail_msg: "Tinyproxy settings are invalid"
+
+    - name: Validate CONNECT ports
+      ansible.builtin.assert:
+        that:
+          - item | int >= 1
+          - item | int <= 65535
+        fail_msg: "CONNECT ports must be between 1 and 65535"
+      loop: "{{ tinyproxy_connect_ports }}"
+
+    - name: Validate provided credentials
+      ansible.builtin.assert:
+        that:
+          - tinyproxy_username | length > 0
+          - tinyproxy_password | length > 0
+          - tinyproxy_username is not search('\\s')
+          - tinyproxy_password is not search('\\s')
+        fail_msg: "Provided Tinyproxy credentials must be non-empty and must not contain whitespace"
+      when: tinyproxy_username is defined or tinyproxy_password is defined
+      no_log: true
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 86400
+      become: true
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        package:
+          - tinyproxy
+          - curl
+          - ufw
+        state: present
+      become: true
+
+    - name: Stop Tinyproxy before applying managed configuration
+      ansible.builtin.systemd:
+        name: tinyproxy.service
+        state: stopped
+      become: true
+      failed_when: false
+
+    - name: Ensure Tinyproxy config directory exists
+      ansible.builtin.file:
+        path: "{{ tinyproxy_config_dir }}"
+        state: directory
+        mode: "0750"
+        owner: root
+        group: tinyproxy
+      become: true
+
+    - name: Ensure Tinyproxy runtime and log directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: tinyproxy
+        group: tinyproxy
+      loop:
+        - /run/tinyproxy
+        - /var/log/tinyproxy
+      become: true
+
+    - name: Check Tinyproxy credentials file
+      ansible.builtin.stat:
+        path: "{{ tinyproxy_credentials_file }}"
+      register: tinyproxy_credentials_stat
+      become: true
+      no_log: true
+
+    - name: Generate Tinyproxy credentials
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          umask 077
+          username="proxy_$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 16)"
+          password="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 48)"
+          printf 'username: %s\npassword: %s\n' "$username" "$password" > {{ tinyproxy_credentials_file | quote }}
+        executable: /bin/bash
+      changed_when: true
+      become: true
+      no_log: true
+      when:
+        - not tinyproxy_credentials_stat.stat.exists
+        - tinyproxy_username is not defined
+        - tinyproxy_password is not defined
+
+    - name: Store provided Tinyproxy credentials
+      ansible.builtin.copy:
+        content: "{{ {'username': tinyproxy_username, 'password': tinyproxy_password} | to_nice_yaml }}"
+        dest: "{{ tinyproxy_credentials_file }}"
+        mode: "0600"
+        owner: root
+        group: root
+      become: true
+      no_log: true
+      when:
+        - tinyproxy_username is defined
+        - tinyproxy_password is defined
+
+    - name: Read Tinyproxy credentials
+      ansible.builtin.slurp:
+        src: "{{ tinyproxy_credentials_file }}"
+      register: tinyproxy_credentials_slurp
+      become: true
+      no_log: true
+
+    - name: Set Tinyproxy credentials fact
+      ansible.builtin.set_fact:
+        tinyproxy_credentials: "{{ tinyproxy_credentials_slurp.content | b64decode | from_yaml }}"
+      no_log: true
+
+    - name: Validate effective credentials
+      ansible.builtin.assert:
+        that:
+          - tinyproxy_credentials.username is defined
+          - tinyproxy_credentials.password is defined
+          - tinyproxy_credentials.username | length > 0
+          - tinyproxy_credentials.password | length > 0
+          - tinyproxy_credentials.username is not search('\\s')
+          - tinyproxy_credentials.password is not search('\\s')
+        fail_msg: "Tinyproxy credentials are invalid"
+      no_log: true
+
+    - name: Write Tinyproxy config file
+      ansible.builtin.template:
+        src: template/tinyproxy.conf.j2
+        dest: "{{ tinyproxy_config_dir }}/tinyproxy.conf"
+        mode: "0640"
+        owner: root
+        group: tinyproxy
+        backup: true
+      become: true
+      no_log: true
+
+    - name: Create Tinyproxy systemd override directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/tinyproxy.service.d
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+      become: true
+
+    - name: Write Tinyproxy systemd hardening override
+      ansible.builtin.copy:
+        src: copy/tinyproxy-hardening.conf
+        dest: /etc/systemd/system/tinyproxy.service.d/hardening.conf
+        mode: "0644"
+        owner: root
+        group: root
+      become: true
+
+    - name: Open Tinyproxy port in firewall
+      community.general.ufw:
+        rule: allow
+        port: "{{ tinyproxy_port }}"
+        proto: tcp
+      become: true
+
+    - name: Restart Tinyproxy service
+      ansible.builtin.systemd:
+        name: tinyproxy.service
+        state: restarted
+        enabled: true
+        daemon_reload: true
+      become: true
+
+    - name: Check Tinyproxy service status
+      ansible.builtin.command:
+        cmd: systemctl is-active tinyproxy.service
+      changed_when: false
+      become: true
+      register: tinyproxy_service_status
+
+    - name: Smoke test Tinyproxy with BasicAuth
+      ansible.builtin.command:
+        cmd: >
+          curl --silent --show-error --fail --max-time 20
+          --config -
+          https://example.com/
+          --output /dev/null
+        stdin: |
+          proxy = "http://127.0.0.1:{{ tinyproxy_port }}"
+          proxy-user = "{{ tinyproxy_credentials.username }}:{{ tinyproxy_credentials.password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Print Tinyproxy summary
+      ansible.builtin.debug:
+        msg:
+          - "Tinyproxy is active: {{ tinyproxy_service_status.stdout }}"
+          - "Proxy endpoint: {{ ansible_host | default(ansible_default_ipv4.address) }}:{{ tinyproxy_port }}"
+          - "Credentials are stored at {{ tinyproxy_credentials_file }}."
+          - "Retrieve them on the server with: sudo cat {{ tinyproxy_credentials_file }}"
